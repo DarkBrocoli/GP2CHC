@@ -1,0 +1,4 @@
+# Tests
+pytest
+# Building the Windows executable (packaging/build.py)
+pyinstaller

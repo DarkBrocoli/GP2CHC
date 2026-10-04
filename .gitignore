@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+.pytest_cache/
+*.pyc
+
+# Build outputs (packaging/build.py)
+build/
+dist/
+
+# Personal test material: tabs and audio are copyrighted, never committed
+Tabs/
+output/
+*.gp
+*.gpx
+*.gp3
+*.gp4
+*.gp5
+*.opus
+*.ogg
+*.mp3
+*.wav
+*.flac
+*.m4a
+*.npy
+notes.mid
+song.ini

@@ -1,0 +1,47 @@
+GP2CHC - Guitar Pro -> Clone Hero (batterie / drums)
+====================================================
+Créé par / Created by Dark_Brocoli - dark.brocoli.ttv@gmail.com
+
+FRANÇAIS
+--------
+Double-cliquez sur GP2CHC.exe. Rien à installer : Python, ffmpeg et Demucs (isolement de la batterie,
+avec son modèle) sont inclus, et aucune connexion internet n'est nécessaire.
+
+1. Choisissez la tablature Guitar Pro (.gp ou .gpx).
+2. Facultatif mais conseillé : « Dossier du morceau... » pour choisir le dossier Clone Hero du morceau
+   (les pistes drums_*.ogg/opus et le song.ini y sont détectés), ou choisissez l'audio vous-même :
+   « Batterie seule » (pistes de batterie) ou « Mix complet » (la batterie en est isolée automatiquement).
+   Le début et le tempo du chart sont alors calés sur l'enregistrement.
+3. Cliquez sur Convertir : notes.mid et song.ini sont écrits dans le dossier de sortie.
+
+Par défaut, 3 s de silence sont ajoutées au début du chart et des fichiers audio du dossier ; les
+originaux sont conservés dans le sous-dossier gp2chc_original_audio.
+
+La langue (français / anglais) suit celle de Windows ; elle se change en haut de la fenêtre.
+
+Ligne de commande : gp2chc-cli.exe --help
+
+ENGLISH
+-------
+Double-click GP2CHC.exe. Nothing to install: Python, ffmpeg and Demucs (drum isolation, with its model)
+are included, and no internet connection is needed.
+
+1. Choose the Guitar Pro tab (.gp or .gpx).
+2. Optional but recommended: "Song folder..." to pick the song's Clone Hero folder (drums_*.ogg/opus
+   tracks and song.ini are detected), or choose the audio yourself: "Drums only" (drum tracks) or
+   "Full mix" (the drums are isolated automatically). The chart's start and tempo are then aligned to
+   the recording.
+3. Click Convert: notes.mid and song.ini are written to the output folder.
+
+By default, 3 s of silence are added at the start of the chart and of the folder's audio files; the
+originals are kept in the gp2chc_original_audio subfolder.
+
+The language (French / English) follows Windows; it can be changed at the top of the window.
+
+Command line: gp2chc-cli.exe --help
+
+Composants inclus / Included components
+---------------------------------------
+- FFmpeg (GPL v3, https://ffmpeg.org, build : https://www.gyan.dev/ffmpeg/builds/) - voir/see _internal/ffmpeg/LICENSE
+- Demucs (MIT, https://github.com/adefossez/demucs) et/and modèle/model htdemucs
+- PyTorch (BSD), NumPy (BSD), Python (PSF)

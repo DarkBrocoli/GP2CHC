@@ -1,0 +1,5 @@
+# Converting a tab needs nothing beyond the Python standard library (3.10+).
+# Syncing to audio (also needs ffmpeg in the PATH):
+numpy
+# Isolating drums from a full mix (large: installs PyTorch):
+demucs
