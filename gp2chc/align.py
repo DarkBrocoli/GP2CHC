@@ -408,6 +408,7 @@ def calibrate(
     progress=None,
     drums_start: float | None = None,
     per_beat: bool = False,
+    separation: str = "standard",
 ) -> Calibration:
     """chart : chart construit avec le tempo de la tablature (offset 0). Renvoie structure, début et tempos.
 
@@ -426,7 +427,7 @@ def calibrate(
     else:
         from . import separate
 
-        sources = [separate.drums(path, progress) for path in mix_paths or []]
+        sources = [separate.drums(path, progress, separation) for path in mix_paths or []]
     if not sources:
         raise ValueError(tr("Aucun audio fourni"))
     if progress:

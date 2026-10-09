@@ -3,3 +3,6 @@
 numpy
 # Isolating drums from a full mix (large: installs PyTorch):
 demucs
+# High-quality separation (BS-RoFormer); its model and DrumSep's are downloaded on first use:
+beartype
+rotary-embedding-torch

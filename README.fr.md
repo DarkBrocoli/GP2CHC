@@ -27,6 +27,27 @@ L'exécutable n'est pas signé : Windows SmartScreen peut afficher un avertissem
 - **song.ini** créé ou fusionné avec un existant (`song_length` et `preview_start_time` suivent le silence ajouté).
 - Interface en **français et en anglais**, selon la langue du système par défaut.
 
+## Séparation haute qualité
+
+Quand seul un mix complet est fourni, la batterie en est isolée avant le calage (et enregistrée dans `drums.opus`). Deux choix (**Séparation** dans la fenêtre, `--separation` en ligne de commande) :
+
+- **Standard** (Demucs, inclus) : environ 1 min par morceau.
+- **Haute qualité** ([BS-RoFormer SW](https://github.com/nomadkaraoke/python-audio-separator), 700 Mo téléchargés à la première utilisation) : environ 10 min par morceau sur un processeur. Sur le morceau de test, la séparation de la batterie gagne 1,1 dB (SDR 5,7 → 6,7 dB) et les cymbales 0,2 dB, avec 79 % du son réel des cymbales récupéré au lieu de 77 % : plus net, mais pas le jour et la nuit.
+
+## Mode sans tablature (expérimental)
+
+**Sans tablature**, GP2CHC peut construire le chart de batterie à partir de l'audio seul (`--from-audio`, ou le choix du mode en haut de la fenêtre) : la batterie (pistes de batterie, ou isolée du mix) est découpée en grosse caisse, caisse claire, toms, charley, ride et crash par [MDX23C DrumSep](https://github.com/jarredou/models) (440 Mo téléchargés à la première utilisation, environ 1 min de calcul par minute de musique), les frappes sont détectées sur chaque instrument, les toms regroupés par hauteur, le tempo et les mesures en 4/4 suivis, et chaque frappe placée sur la grille la plus probable (doubles croches, triolets, triples croches).
+
+Mesuré sur un morceau (score F face à la tablature calée, 1 = parfait) :
+
+| Entrée | Par famille (grosse caisse / caisse claire / toms / cymbales) | Couleurs exactes |
+|--------|----------------------------------------------------------------|------------------|
+| Vraies pistes de batterie | 0,81 (0,95 / 0,91 / 0,76 / 0,68) | 0,66 |
+| Mix complet, séparation haute qualité | 0,78 (0,94 / 0,88 / 0,64 / 0,67) | 0,63 |
+| Mix complet, séparation standard | 0,76 (0,93 / 0,86 / 0,52 / 0,65) | 0,58 |
+
+Grosse caisse et caisse claire sont fiables ; toms et cymbales beaucoup moins (charley et ride sont souvent confondus). C'est un point de départ qui demande un vrai passage dans Moonscraper, encore plus qu'un chart issu d'une tablature.
+
 ## Utilisation
 
 1. Lancez `GP2CHC.exe` (ou `python -m gp2chc` depuis les sources, ou double-clic sur `GP2CHC.pyw`).
@@ -53,6 +74,8 @@ python -m gp2chc tab.gp --list-tracks
 | `--drums-start S` | impose l'instant (s, silence compris) de la première note de batterie |
 | `--lead-in S` | silence ajouté au début du chart et de l'audio (3 par défaut, `0` remet l'audio d'origine) |
 | `--tempo-par-temps` / `--per-beat` | un tempo par temps au lieu d'un par mesure |
+| `--separation standard\|hq` | isolement de la batterie d'un mix : Demucs (rapide) ou BS-RoFormer (meilleur, plus lent) |
+| `--from-audio` | sans tablature : reconnaît les notes dans `--audio` / `--mix` (expérimental) |
 | `--track N` | piste de batterie par numéro ou par nom (défaut : la première) |
 | `--max-hands N` | pads simultanés max, grosse caisse non comptée (2 par défaut, 0 = illimité) |
 | `--map fichier.json` | change la correspondance instrument → lane, ex. `{"56": "yellow-cymbal", "44": "none"}` |
@@ -116,6 +139,6 @@ Il faut un `ffmpeg.exe` statique (dans le PATH, installé par Chocolatey, ou ind
 
 ## Licence
 
-MIT, voir [LICENSE](LICENSE). L'exécutable Windows inclut aussi FFmpeg (GPL v3, licence fournie à côté), Demucs (MIT), PyTorch (BSD), NumPy (BSD) et Python (PSF).
+MIT, voir [LICENSE](LICENSE). `gp2chc/nets/` contient du code de modèles repris de python-audio-separator (MIT, licence dans ce dossier). Les poids de BS-RoFormer SW et de DrumSep ne sont pas distribués avec GP2CHC : ils sont téléchargés à la première utilisation depuis la page de publication de python-audio-separator. L'exécutable Windows inclut aussi FFmpeg (GPL v3, licence fournie à côté), Demucs (MIT), PyTorch (BSD), NumPy (BSD) et Python (PSF).
 
 Créé par Dark_Brocoli · dark.brocoli.ttv@gmail.com

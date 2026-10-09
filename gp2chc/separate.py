@@ -14,6 +14,8 @@ from . import align, deps
 from .i18n import tr
 
 MODEL = "htdemucs"
+# Qualité de séparation -> modèle : Demucs (inclus, ~1 min par morceau) ou BS-RoFormer (téléchargé, plus lent)
+QUALITIES = {"standard": MODEL, "hq": "bs_roformer_sw"}
 
 
 def _cache_dir() -> Path:
@@ -31,17 +33,17 @@ def _cache_dir() -> Path:
 CACHE_DIR = _cache_dir()
 
 
-def _cache_base(path: Path) -> Path:
+def _cache_base(path: Path, quality: str = "standard") -> Path:
     """Préfixe des fichiers en cache d'un mix : nom, taille et date du fichier (pas son dossier, pour qu'un mix
-    rangé dans gp2chc_original_audio garde son cache)."""
+    rangé dans gp2chc_original_audio garde son cache), et modèle utilisé."""
     stat = path.stat()
-    key = f"{path.name}|{stat.st_size}|{stat.st_mtime_ns}|{MODEL}"
+    key = f"{path.name}|{stat.st_size}|{stat.st_mtime_ns}|{QUALITIES[quality]}"
     return CACHE_DIR / hashlib.sha1(key.encode("utf-8")).hexdigest()
 
 
-def _cache_files(path: Path) -> tuple[Path, Path, Path]:
+def _cache_files(path: Path, quality: str = "standard") -> tuple[Path, Path, Path]:
     """(batterie mono pour le calage, batterie stéréo FLAC, reste du morceau FLAC)."""
-    base = _cache_base(path)
+    base = _cache_base(path, quality)
     return base.with_suffix(".npy"), base.with_name(base.name + "_drums.flac"), base.with_name(base.name + "_rest.flac")
 
 
@@ -73,6 +75,36 @@ def _load_model(progress):
     if progress:
         progress(tr("Chargement du modèle Demucs (premier lancement : téléchargement d'environ 80 Mo)..."))
     return get_model(MODEL)
+
+
+def _separate_hq(path: Path, progress):
+    """BS-RoFormer SW : meilleure séparation de la batterie (cymbales comprises) que Demucs, mais plus lente."""
+    from . import models
+
+    np = align._numpy()
+    try:
+        import torch  # noqa: F401
+    except ImportError as e:
+        raise ValueError(
+            tr(
+                "La séparation de la batterie demande Demucs : pip install demucs "
+                "(ou fournissez directement les pistes de batterie seule)"
+            )
+        ) from e
+    audio = align.decode_audio(str(path), models.SAMPLE_RATE, 2).T  # (canaux, échantillons)
+    if progress:
+        progress(tr("Séparation haute qualité de la batterie (BS-RoFormer) : environ 2 min de calcul par minute de musique..."))
+    drums = models.run("bs_roformer_sw", audio, progress)["drums"]
+    return _analysis(drums, models.SAMPLE_RATE), drums, audio - drums, models.SAMPLE_RATE
+
+
+def _analysis(drums, rate: int):
+    """Batterie stéréo -> mono à align.SR, pour le calage."""
+    np = align._numpy()
+    mono = drums.mean(0).astype(np.float32)
+    step = rate // align.SR
+    usable = len(mono) // step * step
+    return mono[:usable].reshape(-1, step).mean(axis=1)  # ré-échantillonnage simple vers align.SR
 
 
 def _separate(path: Path, progress):
@@ -115,19 +147,14 @@ def _separate(path: Path, progress):
         sources = apply_model(model, wav[None], device=device, split=True, overlap=0.25, progress=False)[0]
     drums = (sources[model.sources.index("drums")] * (reference.std() + 1e-8)).cpu().numpy()
     rest = audio.T - drums  # le morceau sans la batterie : mix d'origine moins la batterie isolée
-
-    mono = drums.mean(0).astype(np.float32)
-    step = model.samplerate // align.SR
-    usable = len(mono) // step * step
-    analysis = mono[:usable].reshape(-1, step).mean(axis=1)  # ré-échantillonnage simple vers align.SR
-    return analysis, drums, rest, model.samplerate
+    return _analysis(drums, model.samplerate), drums, rest, model.samplerate
 
 
-def _run(source: Path, progress):
+def _run(source: Path, progress, quality: str = "standard"):
     """Sépare le mix et range les trois résultats en cache ; renvoie la batterie mono pour le calage."""
     np = align._numpy()
-    analysis_file, drums_file, rest_file = _cache_files(source)
-    analysis, drums_audio, rest, rate = _separate(source, progress)
+    analysis_file, drums_file, rest_file = _cache_files(source, quality)
+    analysis, drums_audio, rest, rate = (_separate_hq if quality == "hq" else _separate)(source, progress)
     analysis_file.parent.mkdir(parents=True, exist_ok=True)
     _write_flac(drums_file, drums_audio, rate)
     _write_flac(rest_file, rest, rate)
@@ -135,22 +162,22 @@ def _run(source: Path, progress):
     return analysis
 
 
-def drums(path: str, progress=None):
+def drums(path: str, progress=None, quality: str = "standard"):
     """Batterie isolée du mix `path`, mono à align.SR. Le résultat est mis en cache pour les conversions suivantes."""
     np = align._numpy()
     source = Path(path)
-    analysis_file, drums_file, rest_file = _cache_files(source)
+    analysis_file, drums_file, rest_file = _cache_files(source, quality)
     if analysis_file.exists() and drums_file.exists() and rest_file.exists():
         if progress:
             progress(tr("Batterie déjà isolée précédemment (cache)."))
         return np.load(analysis_file)
-    return _run(source, progress)
+    return _run(source, progress, quality)
 
 
-def stems(path: str, progress=None) -> tuple[Path, Path]:
+def stems(path: str, progress=None, quality: str = "standard") -> tuple[Path, Path]:
     """(batterie seule, morceau sans la batterie) du mix `path`, en FLAC stéréo (séparation faite si besoin)."""
     source = Path(path)
-    _, drums_file, rest_file = _cache_files(source)
+    _, drums_file, rest_file = _cache_files(source, quality)
     if not (drums_file.exists() and rest_file.exists()):
-        _run(source, progress)
+        _run(source, progress, quality)
     return drums_file, rest_file

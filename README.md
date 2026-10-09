@@ -27,6 +27,27 @@ The executable is not signed, so Windows SmartScreen may warn on first launch: "
 - **song.ini** generated or merged with an existing one (`song_length` and `preview_start_time` follow the added silence).
 - **English and French** interface, following the system language by default.
 
+## High-quality separation
+
+When only a full mix is given, the drums are isolated before syncing (and saved as `drums.opus`). Two choices (**Separation** in the window, `--separation` on the command line):
+
+- **Standard** (Demucs, bundled): about 1 min per song.
+- **High quality** ([BS-RoFormer SW](https://github.com/nomadkaraoke/python-audio-separator), 700 MB downloaded on first use): about 10 min per song on a processor. On the song used for testing, drum separation improved by 1.1 dB (SDR 5.7 → 6.7 dB) and cymbals by 0.2 dB, with 79 % of the real cymbal sound recovered instead of 77 %: cleaner, but not a night-and-day difference.
+
+## No-tab mode (experimental)
+
+**Without a tab**, GP2CHC can build the drum chart from the audio alone (`--from-audio`, or the mode switch at the top of the window): the drums (drum tracks, or isolated from the mix) are split into kick, snare, toms, hi-hat, ride and crash by [MDX23C DrumSep](https://github.com/jarredou/models) (440 MB downloaded on first use, about 1 min of processing per minute of music), hits are detected on each instrument, toms are grouped by pitch, the tempo and 4/4 bars are tracked, and each hit is snapped to the most likely grid (16ths, triplets, 32nds).
+
+Measured on one song (F-score against the synced tab, 1 = perfect):
+
+| Input | By family (kick / snare / toms / cymbals) | Exact colors |
+|-------|-------------------------------------------|--------------|
+| Real drum tracks | 0.81 (0.95 / 0.91 / 0.76 / 0.68) | 0.66 |
+| Full mix, high-quality separation | 0.78 (0.94 / 0.88 / 0.64 / 0.67) | 0.63 |
+| Full mix, standard separation | 0.76 (0.93 / 0.86 / 0.52 / 0.65) | 0.58 |
+
+Kick and snare are reliable; toms and cymbals much less (hi-hat vs ride is often wrong). It is a starting point that needs a real pass in Moonscraper, even more than a tab-based chart.
+
 ## Using it
 
 1. Run `GP2CHC.exe` (or `python -m gp2chc` from source, or double-click `GP2CHC.pyw`).
@@ -53,6 +74,8 @@ python -m gp2chc tab.gp --list-tracks
 | `--drums-start S` | force the time (s, silence included) of the first drum note |
 | `--lead-in S` | silence added at the start of the chart and audio (default 3, `0` restores the original audio) |
 | `--per-beat` | one tempo per beat instead of one per bar |
+| `--separation standard\|hq` | drum separation from a full mix: Demucs (fast) or BS-RoFormer (better, slower) |
+| `--from-audio` | no tab: recognise the notes in `--audio` / `--mix` (experimental) |
 | `--track N` | drum track by number or name (default: first drum track) |
 | `--max-hands N` | max pads at once, kick not counted (default 2, 0 = unlimited) |
 | `--map file.json` | override the instrument → lane mapping, e.g. `{"56": "yellow-cymbal", "44": "none"}` |
@@ -116,6 +139,6 @@ It needs a static `ffmpeg.exe` (in the PATH, from Chocolatey, or given with the 
 
 ## License
 
-MIT, see [LICENSE](LICENSE). The Windows executable also bundles FFmpeg (GPL v3, license included next to it), Demucs (MIT), PyTorch (BSD), NumPy (BSD) and Python (PSF).
+MIT, see [LICENSE](LICENSE). `gp2chc/nets/` contains model code from python-audio-separator (MIT, license in that folder). The BS-RoFormer SW and DrumSep weights are not distributed with GP2CHC: they are downloaded on first use from the python-audio-separator release page. The Windows executable also bundles FFmpeg (GPL v3, license included next to it), Demucs (MIT), PyTorch (BSD), NumPy (BSD) and Python (PSF).
 
 Created by Dark_Brocoli · dark.brocoli.ttv@gmail.com

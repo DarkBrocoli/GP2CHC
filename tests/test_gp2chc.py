@@ -229,7 +229,7 @@ def test_calibrate_with_mix_goes_through_separation(monkeypatch):
             env[int((2 + bar * 2 + beat * 0.5) * align.FPS)] = 5.0  # 120 BPM, début à 2 s
 
     messages = []
-    monkeypatch.setattr(separate, "drums", lambda path, progress=None: env)
+    monkeypatch.setattr(separate, "drums", lambda path, progress=None, quality="standard": env)
     monkeypatch.setattr(align, "onset_envelope", lambda samples: samples)
     cal = align.calibrate(c, [], ["mix.wav"], progress=messages.append)
     assert cal.offset_ms == pytest.approx(2000, abs=30)
@@ -565,3 +565,154 @@ def test_separated_mix_chosen_elsewhere_is_left_untouched(tmp_path):
     assert song == "song.wav"
     assert sorted(p.name for p in folder.iterdir() if p.is_file()) == ["drums.opus", "song.wav"]
     assert (tmp_path / "Mon mix.wav").exists()
+
+
+# ---- mode sans tablature et modèles téléchargés --------------------------------------------------------------
+
+
+def test_snap_chooses_straight_or_triplet_grid():
+    from gp2chc import transcribe
+
+    assert transcribe._snap([0.0, 0.26, 0.49, 0.76]) == [Fraction(0), Fraction(1, 4), Fraction(1, 2), Fraction(3, 4)]
+    assert transcribe._snap([0.0, 0.34, 0.65]) == [Fraction(0), Fraction(1, 3), Fraction(2, 3)]
+    assert transcribe._snap([0.98]) == [Fraction(1)]  # juste avant le temps suivant : sur le temps suivant
+
+
+def test_tom_groups_follow_pitch():
+    pytest.importorskip("numpy")
+    from gp2chc import transcribe
+
+    three = [180] * 10 + [130] * 10 + [90] * 10
+    assert transcribe._tom_pitches(three) == [48] * 10 + [45] * 10 + [43] * 10
+    close = [120, 121, 119, 122, 118, 120, 121, 119, 120]  # un seul tom
+    assert set(transcribe._tom_pitches(close)) == {45}
+
+
+def _synthetic_drums(seconds=40, bpm=120.0, start=2.0):
+    """Flux d'attaque simulés : grosse caisse sur 1 et 3, caisse claire sur 2 et 4, ride en croches."""
+    np = pytest.importorskip("numpy")
+    from gp2chc import transcribe
+
+    n = int(seconds * transcribe.FPS)
+    data = {f"{name}_flux": np.zeros(n, np.float32) for name in transcribe.STEMS}
+    beat = 60 / bpm
+    t, k = start, 0
+    while t < seconds - 1:
+        frame = int(round(t * transcribe.FPS))
+        data["kick_flux" if k % 2 == 0 else "snare_flux"][frame] = 1.0
+        data["ride_flux"][frame] = 1.0
+        data["ride_flux"][int(round((t + beat / 2) * transcribe.FPS))] = 1.0
+        t += beat
+        k += 1
+    data["toms_low"] = np.zeros(int(seconds * transcribe.LOW_RATE), np.float32)
+    data["all_flux"] = sum(data[f"{n}_flux"] for n in transcribe.STEMS).astype(np.float32)
+    return data
+
+
+def test_transcribe_finds_tempo_bars_and_notes(monkeypatch):
+    from gp2chc import transcribe
+
+    data = _synthetic_drums()
+    monkeypatch.setattr(transcribe, "analyse", lambda path, progress=None: data)
+    result = transcribe.transcribe(Path("batterie.flac"))
+    assert result.tempo == pytest.approx(120, abs=2)
+    assert result.offset_ms == pytest.approx(2000, abs=15)
+    bar = result.score.bars[1]
+    kicks = sorted(n.pos for n in bar.notes if n.pitch == 36)
+    snares = sorted(n.pos for n in bar.notes if n.pitch == 38)
+    rides = sorted(n.pos for n in bar.notes if n.pitch == 51)
+    assert kicks == [0, 2] and snares == [1, 3]  # caisse claire sur 2 et 4 : mesures bien placées
+    assert rides == [Fraction(k, 2) for k in range(8)]
+    c = chart.build_chart(result.score, chart.load_mapping(), offset_ms=result.offset_ms, bar_tempos=result.bar_tempos)
+    assert c.ticks_to_ms(c.notes[0].tick) == pytest.approx(2000, abs=15)
+
+
+def test_overlap_add_inference_rebuilds_the_signal():
+    torch = pytest.importorskip("torch")
+    np = pytest.importorskip("numpy")
+    from gp2chc import models
+
+    class Echo(torch.nn.Module):  # « modèle » qui renvoie l'entrée pour chaque instrument
+        def forward(self, x):
+            return torch.stack([x, 0.5 * x], dim=1)
+
+    audio = torch.tensor(np.random.default_rng(0).standard_normal((2, 50000)), dtype=torch.float32)
+    roformer = {"model": {"stft_hop_length": 100}, "inference": {"dim_t": 101}, "training": {"instruments": ["a", "b"]}}
+    out = models._run_roformer(Echo(), roformer, audio, 2, None)
+    assert torch.allclose(out[0], audio, atol=1e-4) and torch.allclose(out[1], 0.5 * audio, atol=1e-4)
+    mdx = {"audio": {"hop_length": 100}, "inference": {"dim_t": 101}, "training": {"instruments": ["a", "b"]}}
+    out = models._run_mdx23c(lambda x: torch.stack([x, 0.5 * x], dim=1), mdx, audio, 2, None)
+    assert torch.allclose(out[0], audio, atol=1e-4)
+
+
+def test_interrupted_download_resumes(tmp_path, monkeypatch):
+    import io
+    import urllib.request
+
+    from gp2chc import models
+
+    payload = bytes(range(256)) * 4000
+    calls = []
+
+    class Response(io.BytesIO):
+        def __init__(self, data, status, fail_after=None):
+            super().__init__(data)
+            self.status, self.fail_after, self.sent = status, fail_after, 0
+
+        def read(self, n=-1):
+            if self.fail_after is not None and self.sent >= self.fail_after:
+                raise TimeoutError("délai dépassé")
+            chunk = super().read(min(n, 100_000) if n and n > 0 else n)
+            self.sent += len(chunk)
+            return chunk
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+    def fake_urlopen(request, timeout=None):
+        start = int(request.headers.get("Range", "bytes=0-")[6:-1] or 0)
+        calls.append(start)
+        if len(calls) == 1:
+            return Response(payload, 200, fail_after=300_000)  # coupure au milieu
+        return Response(payload[start:], 206)
+
+    monkeypatch.setattr(urllib.request, "urlopen", fake_urlopen)
+    target = tmp_path / "modele.part"
+    models._fetch("https://exemple/modele", target, len(payload), None)
+    assert target.read_bytes() == payload
+    assert calls[0] == 0 and calls[1] > 0  # la 2e requête reprend où la 1re s'était arrêtée
+
+
+def test_convert_without_tab(tmp_path, monkeypatch):
+    from gp2chc import convert as conv
+    from gp2chc import transcribe
+    from gp2chc.convert import Options, convert
+
+    data = _synthetic_drums()
+    monkeypatch.setattr(transcribe, "analyse", lambda path, progress=None: data)
+    monkeypatch.setattr(conv, "_drums_for_transcription", lambda out, options: Path("batterie.flac"))
+    folder = tmp_path / "Groupe - Titre"
+    result = convert(None, folder, Options(from_audio=True, audio=["batterie.flac"], lead_in_ms=0))
+    assert (folder / "notes.mid").stat().st_size > 200
+    ini_text = (folder / "song.ini").read_text(encoding="utf-8")
+    assert "name = Titre" in ini_text and "artist = Groupe" in ini_text
+    assert any("Mode sans tablature" in m for m in result.messages) and result.warnings
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg absent")
+def test_separated_mix_with_unknown_name_becomes_song(tmp_path):
+    from gp2chc import audio
+
+    folder = tmp_path / "morceau"
+    folder.mkdir()
+    _wav(folder / "mix.wav")  # nom que Clone Hero ne lit pas
+    _wav(tmp_path / "drums.wav")
+    _wav(tmp_path / "rest.wav")
+    song = audio.install_separated(folder, folder / "mix.wav", tmp_path / "drums.wav", tmp_path / "rest.wav")
+    audio.add_lead_in(folder, [], [], 0)
+    assert song == "song.wav"
+    assert sorted(p.name for p in folder.iterdir() if p.is_file()) == ["drums.opus", "song.wav"]
+    assert (folder / audio.BACKUP_DIR / audio.FULL_MIX_DIR / "mix.wav").exists()  # mix d'origine gardé

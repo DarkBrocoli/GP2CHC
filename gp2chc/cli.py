@@ -15,7 +15,7 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
         prog="gp2chc",
         description=tr("Convertit la batterie d'un fichier Guitar Pro (.gp, .gpx) en notes.mid + song.ini pour Clone Hero."),
     )
-    p.add_argument("input", help=tr("fichier Guitar Pro (.gp = GP7/8, .gpx = GP6)"))
+    p.add_argument("input", nargs="?", help=tr("fichier Guitar Pro (.gp = GP7/8, .gpx = GP6) ; inutile avec --from-audio"))
     p.add_argument("-o", "--output", help=tr("dossier de sortie (défaut : output/<Artiste - Titre>)"))
     p.add_argument("--list-tracks", action="store_true", help=tr("affiche les pistes du fichier et quitte"))
     p.add_argument("--track", help=tr("numéro ou nom de la piste de batterie (défaut : la première)"))
@@ -30,6 +30,8 @@ def _parse_args(argv: list[str]) -> argparse.Namespace:
     p.add_argument("--lead-in", type=float, default=3.0, metavar=tr("SECONDES"), help=tr("silence ajouté au début du chart et des fichiers audio du dossier (défaut : 3)"))
     names = ("--per-beat", "--tempo-par-temps") if i18n.language() == "en" else ("--tempo-par-temps", "--per-beat")
     p.add_argument(*names, dest="per_beat", action="store_true", help=tr("calage : un tempo par temps au lieu d'un tempo par mesure"))
+    p.add_argument("--from-audio", action="store_true", help=tr("sans tablature : reconnaît les notes dans l'audio (--audio ou --mix), expérimental"))
+    p.add_argument("--separation", choices=["standard", "hq"], default="standard", help=tr("isolement de la batterie d'un mix : standard (Demucs, rapide) ou hq (BS-RoFormer, meilleur mais ~10 min, 700 Mo téléchargés une fois)"))
     p.add_argument("--no-dynamics", action="store_true", help=tr("n'écrit pas les notes fantômes / accentuées"))
     p.add_argument("--lang", choices=["auto", *i18n.LANGUAGES], help=tr("langue des messages (défaut : celle choisie dans l'interface, sinon celle du système)"))  # fmt: skip
     return p.parse_args(argv)
@@ -54,8 +56,11 @@ def main(argv: list[str] | None = None) -> int:
 
     i18n.set_language(_language_from(argv))
     args = _parse_args(argv)
+    if not args.input and not args.from_audio:
+        print(tr("Erreur : {error}", error=tr("indiquez une tablature, ou --from-audio avec --audio ou --mix")), file=sys.stderr)
+        return 2
     try:
-        if args.list_tracks:
+        if args.list_tracks and args.input:
             tag = tr("[batterie]")
             for index, name, is_drum in readers.list_tracks(args.input):
                 print(f"{index:2d}  {(tag + ' ') if is_drum else ' ' * (len(tag) + 1)}{name}")
@@ -73,6 +78,8 @@ def main(argv: list[str] | None = None) -> int:
             drums_start=args.drums_start,
             lead_in_ms=args.lead_in * 1000,
             tempo_per_beat=args.per_beat,
+            separation=args.separation,
+            from_audio=args.from_audio,
             progress=lambda message: print(message, flush=True),
         )
         result = convert(args.input, args.output, options)

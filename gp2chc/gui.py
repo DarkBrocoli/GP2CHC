@@ -10,7 +10,7 @@ import webbrowser
 from pathlib import Path
 from tkinter import filedialog, messagebox, ttk
 
-from . import __version__, deps, i18n, ini, readers
+from . import __version__, deps, i18n, ini, models, readers
 from .chart import DEFAULT_MAP
 from .convert import Options, convert, safe_name
 from .i18n import tr
@@ -67,6 +67,17 @@ def _drum_name(pitch: int) -> str:
     }[pitch]  # fmt: skip
 
 
+def _separation_label(key: str) -> str:
+    return {
+        "standard": tr("Standard (Demucs, environ 1 min)"),
+        "hq": tr("Haute qualité (BS-RoFormer, environ 10 min)"),
+    }[key]
+
+
+def _separation_key(label: str) -> str:
+    return next(key for key in ("standard", "hq") if _separation_label(key) == label)
+
+
 def _language_choices() -> list[tuple[str, str]]:
     """(code, libellé) : automatique (langue du système), puis chaque langue."""
     system = i18n.LANGUAGES[i18n.system_language()]
@@ -96,6 +107,8 @@ class App(tk.Tk):
         self.drums_start = tk.StringVar()
         self.lead_in = tk.StringVar(value="3")
         self.per_beat = tk.BooleanVar(value=False)
+        self.from_audio = tk.BooleanVar(value=False)
+        self.separation = tk.StringVar(value=_separation_label("standard"))
         self.dynamics = tk.BooleanVar(value=True)
         self.meta = {key: tk.StringVar() for key in ("album", "year", "genre", "charter")}
         self.difficulty = tk.StringVar(value=_keep())
@@ -149,6 +162,7 @@ class App(tk.Tk):
         # valeurs dont le libellé dépend de la langue : on garde leur sens
         lanes = {pitch: self._lane_key(var.get()) for pitch, var in self.mapping_vars.items()}
         keep = self.difficulty.get() == _keep()
+        separation = _separation_key(self.separation.get())
         track = self._selected_track()
         self.extra_lines = self.extra_text.get("1.0", "end-1c")
         log = self.log.get("1.0", "end-1c")
@@ -160,6 +174,7 @@ class App(tk.Tk):
             self.mapping_vars[pitch].set(_lane_label(key))
         if keep:
             self.difficulty.set(_keep())
+        self.separation.set(_separation_label(separation))
         self._build_ui()
         self._fill_tracks(track)
         self._log(log)
@@ -170,20 +185,31 @@ class App(tk.Tk):
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", padx=(0, 8), pady=3)
         entry = ttk.Entry(parent, textvariable=variable, **entry_options)
         entry.grid(row=row, column=1, sticky="ew", pady=3)
+        widgets = [entry]
         if pick:
-            ttk.Button(parent, text=tr("Parcourir..."), command=pick).grid(row=row, column=2, padx=(8, 0), pady=3)
+            widgets.append(ttk.Button(parent, text=tr("Parcourir..."), command=pick))
+            widgets[-1].grid(row=row, column=2, padx=(8, 0), pady=3)
         if clear:
-            ttk.Button(parent, text="✕", width=3, command=clear).grid(row=row, column=3, padx=(4, 0), pady=3)
-        return entry
+            widgets.append(ttk.Button(parent, text="✕", width=3, command=clear))
+            widgets[-1].grid(row=row, column=3, padx=(4, 0), pady=3)
+        return widgets
 
     def _build_main(self, root) -> None:
+        mode = ttk.Frame(root)
+        mode.pack(fill="x", pady=(0, 8))
+        ttk.Radiobutton(mode, text=tr("Avec une tablature"), variable=self.from_audio, value=False,
+                        command=self._refresh_state).pack(side="left")  # fmt: skip
+        ttk.Radiobutton(mode, text=tr("Sans tablature : reconnaissance de la batterie dans l'audio (expérimental)"),
+                        variable=self.from_audio, value=True, command=self._refresh_state).pack(side="left", padx=(16, 0))  # fmt: skip
+
         files = ttk.LabelFrame(root, text=tr("Fichiers"), padding=10)
         files.pack(fill="x")
         files.columnconfigure(1, weight=1)
-        self._row(files, 0, tr("Tablature (.gp, .gpx)"), self.tab, self._pick_tab)
+        self.tab_widgets = self._row(files, 0, tr("Tablature (.gp, .gpx)"), self.tab, self._pick_tab)
         ttk.Label(files, text=tr("Piste de batterie")).grid(row=1, column=0, sticky="w", pady=3)
         self.track_box = ttk.Combobox(files, textvariable=self.track, state="readonly", values=[_no_track()])
         self.track_box.grid(row=1, column=1, sticky="ew", pady=3)
+        self.tab_widgets.append(self.track_box)
         self._row(files, 2, tr("Batterie seule"), self.audio_text, self._pick_audio, self._clear_audio, state="readonly")
         self._row(files, 3, tr("Mix complet"), self.mix_text, self._pick_mix, self._clear_mix, state="readonly")
         ttk.Label(
@@ -232,6 +258,14 @@ class App(tk.Tk):
             text=tr("ajouté au chart et aux fichiers audio du dossier (originaux gardés dans gp2chc_original_audio)"),
             foreground="gray",
         ).grid(row=2, column=2, columnspan=4, sticky="w", pady=(8, 0))
+        ttk.Label(options, text=tr("Séparation (mix complet)")).grid(row=3, column=0, sticky="w", pady=(8, 0))
+        ttk.Combobox(
+            options, textvariable=self.separation, state="readonly", width=40,
+            values=[_separation_label(k) for k in ("standard", "hq")],
+        ).grid(row=3, column=1, columnspan=3, sticky="w", padx=(6, 4), pady=(8, 0))  # fmt: skip
+        ttk.Label(options, text=tr("haute qualité : cymbales plus nettes ; 700 Mo téléchargés une fois"), foreground="gray").grid(
+            row=3, column=4, columnspan=2, sticky="w", pady=(8, 0)
+        )
 
         meta = ttk.LabelFrame(root, text=tr("Infos du song.ini (vide = valeur de la tablature ou du modèle)"), padding=10)
         meta.pack(fill="x", pady=(10, 0))
@@ -364,6 +398,7 @@ class App(tk.Tk):
             button = ttk.Button(box, text=tr("Télécharger...") if key == "ffmpeg" else tr("Installer"), command=action)
             button.grid(row=i, column=3, padx=(8, 0))
             self.module_buttons[key] = button
+        self._build_models_box(root)
         ttk.Button(root, text=tr("Actualiser"), command=self._refresh_modules).pack(anchor="w", pady=(10, 0))
         ttk.Label(
             root,
@@ -393,9 +428,53 @@ class App(tk.Tk):
             self.module_labels[key] = ttk.Label(box, text="")
             self.module_labels[key].grid(row=i, column=1, sticky="w")
             ttk.Label(box, text=role, foreground="gray").grid(row=i, column=2, sticky="w", padx=12)
+        self._build_models_box(root)
         self._refresh_modules()
 
+    def _build_models_box(self, root) -> None:
+        """Modèles téléchargés à la première utilisation : état, téléchargement, suppression."""
+        box = ttk.LabelFrame(root, text=tr("Modèles téléchargés à la demande"), padding=10)
+        box.pack(fill="x", pady=(10, 0))
+        rows = (
+            ("bs_roformer_sw", "BS-RoFormer SW", tr("séparation haute qualité (700 Mo)")),
+            ("drumsep", "DrumSep", tr("mode sans tablature (440 Mo)")),
+        )
+        self.model_labels: dict[str, ttk.Label] = {}
+        self.model_buttons: dict[str, tuple[ttk.Button, ttk.Button]] = {}
+        for i, (key, name, role) in enumerate(rows):
+            ttk.Label(box, text=name, width=18).grid(row=i, column=0, sticky="w", pady=4)
+            self.model_labels[key] = ttk.Label(box, text="")
+            self.model_labels[key].grid(row=i, column=1, sticky="w")
+            ttk.Label(box, text=role, foreground="gray").grid(row=i, column=2, sticky="w", padx=12)
+            get = ttk.Button(box, text=tr("Télécharger"), command=lambda k=key: self._download_model(k))
+            get.grid(row=i, column=3, padx=(8, 0))
+            remove = ttk.Button(box, text=tr("Supprimer"), command=lambda k=key: self._remove_model(k))
+            remove.grid(row=i, column=4, padx=(4, 0))
+            self.model_buttons[key] = (get, remove)
+        ttk.Label(box, text=tr("Dossier : {folder}", folder=models.folder()), foreground="gray").grid(
+            row=len(rows), column=0, columnspan=5, sticky="w", pady=(6, 0)
+        )
+
+    def _download_model(self, name: str) -> None:
+        if self.busy:
+            return
+        self.notebook.select(self.main_tab)
+        self._set_busy(True)
+        self._log("", clear=True)
+        threading.Thread(target=self._worker, args=(None, None, None, [], name), daemon=True).start()
+
+    def _remove_model(self, name: str) -> None:
+        if not self.busy and messagebox.askyesno("GP2CHC", tr("Supprimer ce modèle ? Il sera retéléchargé au besoin.")):
+            models.remove(name)
+            self._refresh_modules()
+
     def _refresh_modules(self) -> None:
+        for key, label in getattr(self, "model_labels", {}).items():
+            ok = models.is_downloaded(key)
+            label.configure(text=tr("✔ téléchargé") if ok else tr("— non téléchargé"), foreground="#2e7d32" if ok else "gray")
+            get, remove = self.model_buttons[key]
+            get.configure(state="disabled" if ok else "normal")
+            remove.configure(state="normal" if ok else "disabled")
         state = deps.status()
         for key, ok in state.items():
             self.module_labels[key].configure(
@@ -536,10 +615,13 @@ class App(tk.Tk):
             self.difficulty.set(values["diff_drums"])
 
     def _refresh_state(self) -> None:
-        """Le décalage manuel ne sert que sans calage automatique."""
+        """Le décalage manuel ne sert que sans calage automatique ; la tablature, qu'en mode tablature."""
+        from_audio = self.from_audio.get()
         calibrated = bool(self.audio or self.mix)
-        self.offset_entry.configure(state="disabled" if calibrated else "normal")
-        self.drums_start_entry.configure(state="normal" if calibrated else "disabled")
+        self.offset_entry.configure(state="disabled" if calibrated or from_audio else "normal")
+        self.drums_start_entry.configure(state="normal" if calibrated and not from_audio else "disabled")
+        for widget in self.tab_widgets:
+            widget.configure(state="disabled" if from_audio else ("readonly" if widget is self.track_box else "normal"))
 
     # ---- conversion ---------------------------------------------------------------------------
 
@@ -562,6 +644,8 @@ class App(tk.Tk):
             drums_start=float(self.drums_start.get().replace(",", ".")) if self.drums_start.get().strip() else None,
             lead_in_ms=float(self.lead_in.get().replace(",", ".") or 0) * 1000,
             tempo_per_beat=self.per_beat.get(),
+            separation=_separation_key(self.separation.get()),
+            from_audio=self.from_audio.get(),
             dynamics=self.dynamics.get(),
             audio=self.audio,
             mix=self.mix,
@@ -571,7 +655,10 @@ class App(tk.Tk):
     def _convert(self) -> None:
         if self.busy:
             return
-        if not self.tab.get():
+        if self.from_audio.get() and not (self.audio or self.mix):
+            messagebox.showinfo("GP2CHC", tr("Le mode sans tablature a besoin de l'audio : pistes de batterie ou mix complet"))
+            return
+        if not self.from_audio.get() and not self.tab.get():
             messagebox.showinfo("GP2CHC", tr("Choisissez d'abord une tablature."))
             return
         try:
@@ -587,7 +674,12 @@ class App(tk.Tk):
                 if messagebox.askyesno("GP2CHC", question):
                     webbrowser.open(deps.FFMPEG_URL)
                 return
-            install = [m for m in (("numpy",) + (("demucs",) if not options.audio else ())) if not deps.has_module(m)]
+            needed = ["numpy"]
+            if options.from_audio or not options.audio:
+                needed.append("demucs")  # Demucs, et PyTorch pour DrumSep
+            if options.separation == "hq" and options.mix and not options.audio:
+                needed.append("roformer")
+            install = [m for m in needed if not deps.has_module(deps.PIP_MODULES[m][0])]
         if install and deps.frozen():  # ne devrait pas arriver : tout est inclus dans l'exécutable
             messagebox.showerror("GP2CHC", tr("Module manquant dans l'exécutable : {names}", names=", ".join(install)))
             return
@@ -599,16 +691,21 @@ class App(tk.Tk):
         self._set_busy(True)
         self._log("", clear=True)
         output = self.output.get().strip() or None
-        threading.Thread(target=self._worker, args=(self.tab.get(), output, options, install), daemon=True).start()
+        tab = None if options.from_audio else self.tab.get()
+        threading.Thread(target=self._worker, args=(tab, output, options, install), daemon=True).start()
 
-    def _worker(self, tab: str | None, output: str | None, options: Options | None, install: list[str]) -> None:
+    def _worker(self, tab: str | None, output: str | None, options: Options | None, install: list[str],
+                download: str | None = None) -> None:  # fmt: skip
         def progress(message: str) -> None:
             self.messages.put(("progress", message))
 
         try:
-            for package in install:
-                deps.pip_install(package, progress)
-            result = convert(tab, output, options) if tab else None
+            for module in install:
+                for package in deps.PIP_MODULES[module][1].split():
+                    deps.pip_install(package, progress)
+            if download:
+                models.download(download, progress)
+            result = convert(tab, output, options) if options is not None else None
             self.messages.put(("ok", result))
         except Exception as e:  # toute erreur est affichée dans la fenêtre plutôt que de fermer le programme
             self.messages.put(("error", e))

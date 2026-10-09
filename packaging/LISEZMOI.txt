@@ -15,6 +15,12 @@ avec son modèle) sont inclus, et aucune connexion internet n'est nécessaire.
    isolée est enregistrée dans drums.opus et la chanson garde le reste (mix d'origine conservé).
 3. Cliquez sur Convertir : notes.mid et song.ini sont écrits dans le dossier de sortie.
 
+Sans tablature (expérimental) : choisissez « Sans tablature » en haut de la fenêtre et donnez l'audio ;
+les notes sont reconnues dans l'audio (modèle DrumSep, 440 Mo téléchargés la première fois). Le
+résultat demande beaucoup de corrections, surtout pour les toms et les cymbales.
+Séparation « Haute qualité » : cymbales un peu plus nettes, environ 10 min par morceau (700 Mo
+téléchargés la première fois).
+
 Par défaut, 3 s de silence sont ajoutées au début du chart et des fichiers audio du dossier ; les
 originaux sont conservés dans le sous-dossier gp2chc_original_audio.
 
@@ -34,6 +40,12 @@ are included, and no internet connection is needed.
    the recording. With a full mix, the isolated drums are saved to drums.opus and the song keeps the
    rest (original mix kept).
 3. Click Convert: notes.mid and song.ini are written to the output folder.
+
+Without a tab (experimental): choose "Without a tab" at the top of the window and give the audio;
+the notes are recognised from the audio (DrumSep model, 440 MB downloaded the first time). The result
+needs many fixes, especially for toms and cymbals.
+"High quality" separation: slightly cleaner cymbals, about 10 min per song (700 MB downloaded the
+first time).
 
 By default, 3 s of silence are added at the start of the chart and of the folder's audio files; the
 originals are kept in the gp2chc_original_audio subfolder.

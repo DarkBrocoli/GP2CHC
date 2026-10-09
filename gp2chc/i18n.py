@@ -114,7 +114,8 @@ EN: dict[str, str] = {
     # ligne de commande
     "Convertit la batterie d'un fichier Guitar Pro (.gp, .gpx) en notes.mid + song.ini pour Clone Hero.":
         "Converts the drums of a Guitar Pro file (.gp, .gpx) to notes.mid + song.ini for Clone Hero.",
-    "fichier Guitar Pro (.gp = GP7/8, .gpx = GP6)": "Guitar Pro file (.gp = GP7/8, .gpx = GP6)",
+    "fichier Guitar Pro (.gp = GP7/8, .gpx = GP6) ; inutile avec --from-audio":
+        "Guitar Pro file (.gp = GP7/8, .gpx = GP6); not needed with --from-audio",
     "dossier de sortie (défaut : output/<Artiste - Titre>)": "output folder (default: output/<Artist - Title>)",
     "affiche les pistes du fichier et quitte": "list the tracks of the file and exit",
     "numéro ou nom de la piste de batterie (défaut : la première)": "number or name of the drum track (default: the first one)",
@@ -339,6 +340,50 @@ EN: dict[str, str] = {
     "Il manque : {names}.\n\nL'installer maintenant puis lancer la conversion ?":
         "Missing: {names}.\n\nInstall it now and then run the conversion?",
     "Installation terminée.": "Installation finished.",
+    # séparation haute qualité, modèles téléchargés, mode sans tablature
+    "sans tablature : reconnaît les notes dans l'audio (--audio ou --mix), expérimental":
+        "without a tab: recognises the notes in the audio (--audio or --mix), experimental",
+    "isolement de la batterie d'un mix : standard (Demucs, rapide) ou hq (BS-RoFormer, meilleur mais ~10 min, 700 Mo téléchargés une fois)":
+        "isolating drums from a mix: standard (Demucs, fast) or hq (BS-RoFormer, better but ~10 min, 700 MB downloaded once)",
+    "indiquez une tablature, ou --from-audio avec --audio ou --mix": "give a tab, or --from-audio with --audio or --mix",
+    "Le mode sans tablature a besoin de l'audio : pistes de batterie ou mix complet":
+        "The no-tab mode needs audio: drum tracks or a full mix",
+    "Mode sans tablature (expérimental) : tempo d'environ {tempo:.0f} BPM, {bars} mesures ; frappes reconnues : "
+    "grosse caisse {kick}, caisse claire {snare}, toms {toms}, charley {hh}, ride {ride}, crash {crash}":
+        "No-tab mode (experimental): tempo about {tempo:.0f} BPM, {bars} bars; hits recognised: "
+        "kick {kick}, snare {snare}, toms {toms}, hi-hat {hh}, ride {ride}, crash {crash}",
+    "Chart reconnu automatiquement dans l'audio : il y aura des notes en trop, manquantes ou de la mauvaise couleur "
+    "(surtout entre charley et ride, et entre les toms). Repassez-le dans Moonscraper avant de jouer.":
+        "Chart recognised automatically from the audio: expect extra, missing or wrongly coloured notes "
+        "(especially hi-hat vs ride, and between toms). Go through it in Moonscraper before playing.",
+    "Standard (Demucs, environ 1 min)": "Standard (Demucs, about 1 min)",
+    "Haute qualité (BS-RoFormer, environ 10 min)": "High quality (BS-RoFormer, about 10 min)",
+    "Modèles téléchargés à la demande": "Models downloaded on demand",
+    "séparation haute qualité (700 Mo)": "high-quality separation (700 MB)",
+    "mode sans tablature (440 Mo)": "no-tab mode (440 MB)",
+    "Supprimer ce modèle ? Il sera retéléchargé au besoin.": "Delete this model? It will be downloaded again if needed.",
+    "Télécharger": "Download",
+    "Supprimer": "Delete",
+    "Avec une tablature": "With a tab",
+    "Sans tablature : reconnaissance de la batterie dans l'audio (expérimental)": "Without a tab: drums recognised from the audio (experimental)",
+    "Séparation (mix complet)": "Separation (full mix)",
+    "haute qualité : cymbales plus nettes ; 700 Mo téléchargés une fois": "high quality: cleaner cymbals; 700 MB downloaded once",
+    "Dossier : {folder}": "Folder: {folder}",
+    "✔ téléchargé": "✔ downloaded",
+    "— non téléchargé": "— not downloaded",
+    "Téléchargement impossible ({name}) : {error}": "Download failed ({name}): {error}",
+    "  {percent} %": "  {percent} %",
+    "Téléchargement du modèle {name} ({size} Mo, une seule fois)...": "Downloading the model {name} ({size} MB, only once)...",
+    "Téléchargement incomplet ({name}), réessayez": "Incomplete download ({name}), try again",
+    "Séparation haute qualité de la batterie (BS-RoFormer) : environ 2 min de calcul par minute de musique...":
+        "High-quality drum separation (BS-RoFormer): about 2 min of processing per minute of music...",
+    "Séparation de la batterie en 6 instruments (DrumSep) : environ 1 min de calcul par minute de musique...":
+        "Splitting the drums into 6 instruments (DrumSep): about 1 min of processing per minute of music...",
+    "Détection des frappes...": "Detecting hits...",
+    "Recherche du tempo et des mesures...": "Finding the tempo and bars...",
+    "Pas assez de batterie dans l'audio pour reconnaître le rythme": "Not enough drums in the audio to recognise the rhythm",
+    "Batterie reconnue dans l'audio": "Drums recognised from the audio",
+    "Instruments de la batterie déjà séparés précédemment (cache).": "Drum instruments already separated previously (cache).",
     "Batterie isolée enregistrée dans {drums} ; {song} contient maintenant le morceau sans la batterie "
     "(mix complet d'origine gardé dans {folder})":
         "Isolated drums saved to {drums}; {song} now holds the song without the drums "

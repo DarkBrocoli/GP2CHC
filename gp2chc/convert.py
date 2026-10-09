@@ -7,7 +7,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import align, audio
+from . import align, audio, separate
 from . import chart as chart_mod
 from . import ini, midi, readers
 from .i18n import tr
@@ -33,6 +33,8 @@ class Options:
     drums_start: float | None = None  # instant (s, silence ajouté compris) imposé pour la 1re note de batterie ; None = auto
     lead_in_ms: float = DEFAULT_LEAD_IN_MS  # silence ajouté au début du chart et des fichiers audio du morceau
     tempo_per_beat: bool = False  # calage : un tempo par temps au lieu d'un tempo par mesure
+    separation: str = "standard"  # isolement de la batterie d'un mix : "standard" (Demucs) ou "hq" (BS-RoFormer)
+    from_audio: bool = False  # mode sans tablature : les notes sont reconnues dans l'audio (expérimental)
     progress: Callable[[str], None] | None = None  # reçoit les messages d'avancement (interface graphique)
 
 
@@ -67,19 +69,9 @@ def _shift_times(values: dict[str, str], lead: float) -> None:
             pass
 
 
-def convert(input_path: str | Path, output: str | Path | None = None, options: Options | None = None) -> Result:
-    """Lit la tablature et écrit notes.mid + song.ini. Lève ValueError / OSError en cas de problème."""
-    options = options or Options()
-    score = readers.read_score(input_path, options.track)
-    mapping = chart_mod.load_mapping(options.mapping, options.mapping_overrides)
-    title = score.title or Path(input_path).stem
-    out = Path(output) if output else Path("output") / safe_name(f"{score.artist} - {title}")
-    out.mkdir(parents=True, exist_ok=True)
-
-    lead = max(0.0, options.lead_in_ms)
+def _from_tab(score, mapping, options: Options, lead: float, messages: list[str], warnings: list[str]):
+    """Chart d'une tablature, calé sur l'audio s'il y en a. Renvoie (chart, durée du morceau en ms ou None)."""
     chart = chart_mod.build_chart(score, mapping, options.max_hands, options.offset_ms + lead)
-    messages: list[str] = []
-    warnings: list[str] = []
     song_length = None
     if options.audio or options.mix:
         # calage sur l'audio d'origine (sans le silence ajouté par une conversion précédente)
@@ -95,6 +87,7 @@ def convert(input_path: str | Path, output: str | Path | None = None, options: O
             options.progress,
             drums_start,
             options.tempo_per_beat,
+            options.separation,
         )
         song_length = round(cal.audio_ms + lead)
         if cal.hit_rate_after >= MIN_HIT_RATE:
@@ -165,6 +158,91 @@ def convert(input_path: str | Path, output: str | Path | None = None, options: O
             )
             warnings.append(warning)
             messages.append(warning)
+    return chart, song_length
+
+
+def _output_folder(output, options: Options) -> Path:
+    """Mode sans tablature : le dossier choisi, sinon celui de l'audio."""
+    if output:
+        out = Path(output)
+    else:
+        source = (options.audio or options.mix or [None])[0]
+        if source is None:
+            raise ValueError(tr("Le mode sans tablature a besoin de l'audio : pistes de batterie ou mix complet"))
+        out = Path(source).parent
+    out.mkdir(parents=True, exist_ok=True)
+    return out
+
+
+def _song_names(out: Path, options: Options) -> tuple[str, str]:
+    """(titre, artiste) : song.ini du dossier ou modèle, sinon nom du dossier « Artiste - Titre »."""
+    template = options.ini_template or (out / "song.ini" if (out / "song.ini").exists() else None)
+    values = ini.read_ini(template) if template else {}
+    title, artist = values.get("name", ""), values.get("artist", "")
+    if not title:
+        name = out.name
+        artist, _, title = name.partition(" - ") if " - " in name else ("", "", name)
+    return title.strip(), artist.strip()
+
+
+def _drums_for_transcription(out: Path, options: Options) -> Path:
+    """Fichier de batterie seule à reconnaître : la piste de batterie (ou leur somme), ou la batterie isolée du mix."""
+    if options.audio:
+        files = [audio.original(p) for p in options.audio]
+        if len(files) == 1:
+            return files[0]
+        return audio.sum_tracks(files)
+    if options.mix:
+        drums_file, _ = separate.stems(str(audio.original_mix(options.mix[0])), options.progress, options.separation)
+        return drums_file
+    raise ValueError(tr("Le mode sans tablature a besoin de l'audio : pistes de batterie ou mix complet"))
+
+
+def _from_audio(out: Path, options: Options, mapping, lead: float, messages: list[str], warnings: list[str]):
+    """Mode sans tablature : notes reconnues dans l'audio. Renvoie (score, chart)."""
+    from . import transcribe
+
+    drums_file = _drums_for_transcription(out, options)
+    result = transcribe.transcribe(drums_file, options.tempo_per_beat, options.progress)
+    score = result.score
+    score.title, score.artist = _song_names(out, options)
+    chart = chart_mod.build_chart(score, mapping, options.max_hands, result.offset_ms + lead, result.bar_tempos)
+    found = result.counts
+    messages.append(
+        tr(
+            "Mode sans tablature (expérimental) : tempo d'environ {tempo:.0f} BPM, {bars} mesures ; frappes reconnues : "
+            "grosse caisse {kick}, caisse claire {snare}, toms {toms}, charley {hh}, ride {ride}, crash {crash}",
+            tempo=result.tempo, bars=len(score.bars), **{k: found.get(k, 0) for k in transcribe.STEMS},
+        )
+    )
+    warnings.append(
+        tr(
+            "Chart reconnu automatiquement dans l'audio : il y aura des notes en trop, manquantes ou de la mauvaise "
+            "couleur (surtout entre charley et ride, et entre les toms). Repassez-le dans Moonscraper avant de jouer."
+        )
+    )
+    return score, chart
+
+
+def convert(input_path: str | Path, output: str | Path | None = None, options: Options | None = None) -> Result:
+    """Lit la tablature et écrit notes.mid + song.ini. Lève ValueError / OSError en cas de problème."""
+    options = options or Options()
+    mapping = chart_mod.load_mapping(options.mapping, options.mapping_overrides)
+    lead = max(0.0, options.lead_in_ms)
+    messages: list[str] = []
+    warnings: list[str] = []
+    song_length = None
+
+    if options.from_audio:
+        out = _output_folder(output, options)
+        score, chart = _from_audio(out, options, mapping, lead, messages, warnings)
+        title = score.title
+    else:
+        score = readers.read_score(input_path, options.track)
+        title = score.title or Path(input_path).stem
+        out = Path(output) if output else Path("output") / safe_name(f"{score.artist} - {title}")
+        out.mkdir(parents=True, exist_ok=True)
+        chart, song_length = _from_tab(score, mapping, options, lead, messages, warnings)
 
     midi.write_midi(out / "notes.mid", chart_mod.to_midi_tracks(chart, title, options.dynamics), PPQ)
 
@@ -175,7 +253,7 @@ def convert(input_path: str | Path, output: str | Path | None = None, options: O
         from . import separate
 
         mix = options.mix[0]
-        drums_audio, rest_audio = separate.stems(str(audio.original_mix(mix)), options.progress)
+        drums_audio, rest_audio = separate.stems(str(audio.original_mix(mix)), options.progress, options.separation)
         separated_song = audio.install_separated(out, mix, drums_audio, rest_audio)
         inside = Path(mix).resolve().parent in {out.resolve(), (out / audio.BACKUP_DIR).resolve(),
                                                 (out / audio.BACKUP_DIR / audio.FULL_MIX_DIR).resolve()}  # fmt: skip

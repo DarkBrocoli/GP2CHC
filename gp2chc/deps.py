@@ -19,6 +19,7 @@ FFMPEG_URL = "https://www.gyan.dev/ffmpeg/builds/"
 PIP_MODULES = {
     "numpy": ("numpy", "numpy"),
     "demucs": ("demucs", "demucs"),
+    "roformer": ("rotary_embedding_torch", "beartype rotary-embedding-torch"),  # séparation haute qualité
 }
 
 

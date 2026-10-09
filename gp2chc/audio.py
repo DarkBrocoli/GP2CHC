@@ -61,10 +61,11 @@ def install_separated(folder: Path, mix: str | Path, drums_audio: Path, rest_aud
     full = backup / FULL_MIX_DIR
     full.mkdir(parents=True, exist_ok=True)
     inside = mix.resolve().parent in {folder.resolve(), backup.resolve(), full.resolve()}
-    song = mix.name if inside else _target_name(mix, "song", set(), 0, 1)
+    # la chanson garde le nom du mix s'il est déjà un nom Clone Hero (song.ogg...), sinon elle devient song.<ext>
+    song = mix.name if inside and _is_stem_name(mix) else _target_name(mix, "song", set(), 0, 1)
 
     # mettre de côté, intacts, le mix complet et une éventuelle piste de batterie qui n'est pas la nôtre
-    for name in (song, DRUMS_NAME):
+    for name in dict.fromkeys((mix.name if inside else song, song, DRUMS_NAME)):
         if (full / name).exists() or (name == DRUMS_NAME and (backup / name).exists()):
             continue
         current = original(folder / name)
@@ -76,6 +77,10 @@ def install_separated(folder: Path, mix: str | Path, drums_audio: Path, rest_aud
         if not target.exists() or target.stat().st_mtime_ns < source.stat().st_mtime_ns:
             _encode(source, target, 0)
     return song
+
+
+def _is_stem_name(path: Path) -> bool:
+    return path.stem.lower() in STEMS and path.suffix.lower() in CODECS
 
 
 def _is_song_audio(path: Path) -> bool:
@@ -99,6 +104,27 @@ def _target_name(source: Path, role: str, taken: set[str], index: int, count: in
     stem = role if count == 1 else f"{role}_{index + 1}"
     name = stem + suffix
     return name if name not in taken else source.stem + suffix
+
+
+def sum_tracks(files: list[Path]) -> Path:
+    """Plusieurs pistes de batterie (drums_1, drums_2...) additionnées en une seule, en cache (FLAC 44,1 kHz)."""
+    import hashlib
+
+    from .separate import CACHE_DIR
+
+    key = "|".join(f"{f.name}|{f.stat().st_size}|{f.stat().st_mtime_ns}" for f in files)
+    target = CACHE_DIR / (hashlib.sha1(key.encode("utf-8")).hexdigest() + "_drums_sum.flac")
+    if target.exists():
+        return target
+    target.parent.mkdir(parents=True, exist_ok=True)
+    cmd = [deps.ffmpeg() or "ffmpeg", "-v", "error", "-y"]
+    for f in files:
+        cmd += ["-i", str(f)]
+    cmd += ["-filter_complex", f"amix=inputs={len(files)}:normalize=0", "-ar", "44100", "-ac", "2", "-c:a", "flac", str(target)]
+    run = subprocess.run(cmd, capture_output=True, creationflags=deps.NO_WINDOW)
+    if run.returncode != 0:
+        raise ValueError(tr("Impossible de lire l'audio '{path}' : {error}", path=files[0], error=run.stderr.decode(errors="replace").strip()))
+    return target
 
 
 def duration_ms(path: Path) -> float | None:

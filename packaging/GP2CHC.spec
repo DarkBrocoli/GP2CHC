@@ -17,8 +17,10 @@ a = Analysis(
     pathex=[str(ROOT)],
     datas=datas,
     # Demucs choisit ses classes de modèle d'après le fichier du modèle : on inclut tous ses modules
-    hiddenimports=collect_submodules("demucs") + collect_submodules("gp2chc") + ["yaml", "safetensors", "julius", "einops"],
-    excludes=["scipy", "matplotlib", "PIL", "pytest", "IPython", "pandas", "mido", "PyInstaller", "setuptools"],
+    hiddenimports=collect_submodules("demucs") + collect_submodules("gp2chc") + collect_submodules("beartype")
+    + ["yaml", "safetensors", "julius", "einops", "rotary_embedding_torch"],
+    excludes=["scipy", "matplotlib", "PIL", "pytest", "IPython", "pandas", "mido", "PyInstaller", "setuptools",
+              "librosa", "numba", "onnxruntime", "audio_separator"],
     noarchive=False,
 )
 pyz = PYZ(a.pure)
