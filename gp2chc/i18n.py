@@ -224,10 +224,11 @@ EN: dict[str, str] = {
     "(automatique : première batterie)": "(automatic: first drum track)",
     "Batterie seule": "Drums only",
     "Mix complet": "Full mix",
-    "Facultatif : cale le début et le tempo sur l'enregistrement. Le mix complet passe d'abord par Demucs\n"
-    "(isole la batterie, quelques minutes). Il est ignoré si la batterie seule est fournie.":
-        "Optional: aligns the start and tempo to the recording. The full mix first goes through Demucs\n"
-        "(isolates the drums, a few minutes). It is ignored if drums-only audio is given.",
+    "Facultatif : cale le début et le tempo sur l'enregistrement. Le mix complet passe d'abord par Demucs (quelques\n"
+    "minutes) : la batterie isolée est enregistrée dans drums.opus et la chanson garde le reste. "
+    "Ignoré si la batterie seule est fournie.":
+        "Optional: aligns the start and tempo to the recording. The full mix first goes through Demucs (a few\n"
+        "minutes): the isolated drums are saved to drums.opus and the song keeps the rest. Ignored if drums-only audio is given.",
     "Dossier du morceau...": "Song folder...",
     "détecte la batterie, le song.ini et le dossier de sortie": "detects the drums, the song.ini and the output folder",
     "Dossier de sortie": "Output folder",
@@ -338,6 +339,13 @@ EN: dict[str, str] = {
     "Il manque : {names}.\n\nL'installer maintenant puis lancer la conversion ?":
         "Missing: {names}.\n\nInstall it now and then run the conversion?",
     "Installation terminée.": "Installation finished.",
+    "Batterie isolée enregistrée dans {drums} ; {song} contient maintenant le morceau sans la batterie "
+    "(mix complet d'origine gardé dans {folder})":
+        "Isolated drums saved to {drums}; {song} now holds the song without the drums "
+        "(original full mix kept in {folder})",
+    "Batterie isolée enregistrée dans {drums} ; {song} contient le morceau sans la batterie "
+    "(votre mix complet n'est pas modifié)":
+        "Isolated drums saved to {drums}; {song} holds the song without the drums (your full mix is unchanged)",
     "À propos": "About",
     "Version {version}": "Version {version}",
     "Convertit la batterie des tablatures Guitar Pro en charts Clone Hero.": "Converts the drums of Guitar Pro tabs into Clone Hero charts.",

@@ -200,13 +200,17 @@ def test_separate_uses_cache(tmp_path, monkeypatch):
 
     def fake_separate(path, progress):
         calls.append(path)
-        return np.arange(5, dtype=np.float32)
+        stereo = np.zeros((2, 10), dtype=np.float32)
+        return np.arange(5, dtype=np.float32), stereo, stereo, 44100
 
     monkeypatch.setattr(separate, "_separate", fake_separate)
+    monkeypatch.setattr(separate, "_write_flac", lambda path, data, rate: Path(path).write_bytes(b"flac"))
     first = separate.drums(str(audio))
     second = separate.drums(str(audio))
     assert len(calls) == 1
     assert (first == second).all()
+    drums_flac, rest_flac = separate.stems(str(audio))  # déjà séparé : rien à refaire
+    assert len(calls) == 1 and drums_flac.exists() and rest_flac.exists()
 
     audio.write_bytes(b"fake but different")  # fichier modifié : le cache ne doit plus servir
     separate.drums(str(audio))
@@ -516,3 +520,48 @@ def test_language_preference_is_saved(tmp_path, monkeypatch):
     assert i18n.preference() == "auto"
     i18n.save_preference("en")
     assert i18n.preference() == "en"
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg absent")
+def test_separated_drums_become_drums_opus_and_song_loses_its_drums(tmp_path):
+    from gp2chc import audio
+
+    folder = tmp_path / "morceau"
+    folder.mkdir()
+    _wav(folder / "song.wav", seconds=1.0)  # le mix complet, dans le dossier du morceau
+    _wav(tmp_path / "drums.wav", seconds=1.0)  # ce que Demucs aurait isolé
+    _wav(tmp_path / "rest.wav", seconds=1.0)  # le morceau sans la batterie
+    mix_size = (folder / "song.wav").stat().st_size
+
+    song = audio.install_separated(folder, folder / "song.wav", tmp_path / "drums.wav", tmp_path / "rest.wav")
+    audio.add_lead_in(folder, [], [], 500)
+    backup = folder / audio.BACKUP_DIR
+    assert song == "song.wav"
+    assert sorted(p.name for p in folder.iterdir() if p.is_file()) == ["drums.opus", "song.wav"]
+    assert (backup / audio.FULL_MIX_DIR / "song.wav").stat().st_size == mix_size  # mix d'origine intact
+    assert audio.original_mix(folder / "song.wav") == backup / audio.FULL_MIX_DIR / "song.wav"
+    assert audio.original(folder / "drums.opus") == backup / "drums.opus"  # resservira comme piste de batterie
+    assert audio.duration_ms(folder / "drums.opus") == pytest.approx(1500, abs=30)
+    assert audio.duration_ms(folder / "song.wav") == pytest.approx(1500, abs=5)
+
+    # nouvelle conversion : rien n'est refait ni décalé deux fois
+    stamps = {p.name: p.stat().st_mtime_ns for p in folder.iterdir() if p.is_file()}
+    audio.install_separated(folder, folder / "song.wav", tmp_path / "drums.wav", tmp_path / "rest.wav")
+    audio.add_lead_in(folder, [str(folder / "drums.opus")], [], 500)
+    assert {p.name: p.stat().st_mtime_ns for p in folder.iterdir() if p.is_file()} == stamps
+
+
+@pytest.mark.skipif(not __import__("shutil").which("ffmpeg"), reason="ffmpeg absent")
+def test_separated_mix_chosen_elsewhere_is_left_untouched(tmp_path):
+    from gp2chc import audio
+
+    folder = tmp_path / "morceau"
+    folder.mkdir()
+    _wav(tmp_path / "Mon mix.wav")
+    _wav(tmp_path / "drums.wav")
+    _wav(tmp_path / "rest.wav")
+    song = audio.install_separated(folder, tmp_path / "Mon mix.wav", tmp_path / "drums.wav", tmp_path / "rest.wav")
+    audio.add_lead_in(folder, [], [], 0)
+    assert song == "song.wav"
+    assert sorted(p.name for p in folder.iterdir() if p.is_file()) == ["drums.opus", "song.wav"]
+    assert (tmp_path / "Mon mix.wav").exists()

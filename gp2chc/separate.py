@@ -1,15 +1,21 @@
-"""Isole la batterie d'un mix complet avec Demucs (facultatif : pip install demucs)."""
+"""Isole la batterie d'un mix complet avec Demucs (facultatif : pip install demucs).
+
+Produit, en cache : la batterie en mono pour le calage, et en pleine qualité (FLAC stéréo) la batterie seule
+et le reste du morceau (mix moins la batterie), pour les pistes audio du dossier Clone Hero."""
 
 from __future__ import annotations
 
 import hashlib
 import os
+import subprocess
 from pathlib import Path
 
 from . import align, deps
 from .i18n import tr
 
 MODEL = "htdemucs"
+
+
 def _cache_dir() -> Path:
     base = os.environ.get("LOCALAPPDATA") or os.environ.get("XDG_CACHE_HOME")
     if not base:
@@ -25,10 +31,29 @@ def _cache_dir() -> Path:
 CACHE_DIR = _cache_dir()
 
 
-def _cache_file(path: Path) -> Path:
+def _cache_base(path: Path) -> Path:
+    """Préfixe des fichiers en cache d'un mix : nom, taille et date du fichier (pas son dossier, pour qu'un mix
+    rangé dans gp2chc_original_audio garde son cache)."""
     stat = path.stat()
-    key = f"{path.resolve()}|{stat.st_size}|{stat.st_mtime_ns}|{MODEL}"
-    return CACHE_DIR / (hashlib.sha1(key.encode("utf-8")).hexdigest() + ".npy")
+    key = f"{path.name}|{stat.st_size}|{stat.st_mtime_ns}|{MODEL}"
+    return CACHE_DIR / hashlib.sha1(key.encode("utf-8")).hexdigest()
+
+
+def _cache_files(path: Path) -> tuple[Path, Path, Path]:
+    """(batterie mono pour le calage, batterie stéréo FLAC, reste du morceau FLAC)."""
+    base = _cache_base(path)
+    return base.with_suffix(".npy"), base.with_name(base.name + "_drums.flac"), base.with_name(base.name + "_rest.flac")
+
+
+def _write_flac(path: Path, channels_first, rate: int) -> None:
+    """Écrit un tableau (canaux, échantillons) en FLAC 24 bits avec ffmpeg."""
+    np = align._numpy()
+    data = np.ascontiguousarray(np.clip(channels_first, -1.0, 1.0).T, dtype=np.float32)
+    cmd = [deps.ffmpeg() or "ffmpeg", "-v", "error", "-y", "-f", "f32le", "-ar", str(rate), "-ac", str(data.shape[1]),
+           "-i", "-", "-c:a", "flac", "-sample_fmt", "s32", str(path)]  # fmt: skip
+    run = subprocess.run(cmd, input=data.tobytes(), capture_output=True, creationflags=deps.NO_WINDOW)
+    if run.returncode != 0:
+        raise ValueError(tr("Impossible de lire l'audio '{path}' : {error}", path=path, error=run.stderr.decode(errors="replace").strip()))
 
 
 def _load_model(progress):
@@ -88,24 +113,44 @@ def _separate(path: Path, progress):
             progress(tr("Séparation de la batterie (processeur), cela peut prendre quelques minutes..."))
     with torch.no_grad():
         sources = apply_model(model, wav[None], device=device, split=True, overlap=0.25, progress=False)[0]
-    drums = sources[model.sources.index("drums")] * (reference.std() + 1e-8)
+    drums = (sources[model.sources.index("drums")] * (reference.std() + 1e-8)).cpu().numpy()
+    rest = audio.T - drums  # le morceau sans la batterie : mix d'origine moins la batterie isolée
 
-    mono = drums.mean(0).cpu().numpy().astype(np.float32)
+    mono = drums.mean(0).astype(np.float32)
     step = model.samplerate // align.SR
     usable = len(mono) // step * step
-    return mono[:usable].reshape(-1, step).mean(axis=1)  # ré-échantillonnage simple vers align.SR
+    analysis = mono[:usable].reshape(-1, step).mean(axis=1)  # ré-échantillonnage simple vers align.SR
+    return analysis, drums, rest, model.samplerate
+
+
+def _run(source: Path, progress):
+    """Sépare le mix et range les trois résultats en cache ; renvoie la batterie mono pour le calage."""
+    np = align._numpy()
+    analysis_file, drums_file, rest_file = _cache_files(source)
+    analysis, drums_audio, rest, rate = _separate(source, progress)
+    analysis_file.parent.mkdir(parents=True, exist_ok=True)
+    _write_flac(drums_file, drums_audio, rate)
+    _write_flac(rest_file, rest, rate)
+    np.save(analysis_file, analysis)
+    return analysis
 
 
 def drums(path: str, progress=None):
     """Batterie isolée du mix `path`, mono à align.SR. Le résultat est mis en cache pour les conversions suivantes."""
     np = align._numpy()
     source = Path(path)
-    cache = _cache_file(source)
-    if cache.exists():
+    analysis_file, drums_file, rest_file = _cache_files(source)
+    if analysis_file.exists() and drums_file.exists() and rest_file.exists():
         if progress:
             progress(tr("Batterie déjà isolée précédemment (cache)."))
-        return np.load(cache)
-    samples = _separate(source, progress)
-    cache.parent.mkdir(parents=True, exist_ok=True)
-    np.save(cache, samples)
-    return samples
+        return np.load(analysis_file)
+    return _run(source, progress)
+
+
+def stems(path: str, progress=None) -> tuple[Path, Path]:
+    """(batterie seule, morceau sans la batterie) du mix `path`, en FLAC stéréo (séparation faite si besoin)."""
+    source = Path(path)
+    _, drums_file, rest_file = _cache_files(source)
+    if not (drums_file.exists() and rest_file.exists()):
+        _run(source, progress)
+    return drums_file, rest_file

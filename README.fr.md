@@ -21,6 +21,7 @@ L'exécutable n'est pas signé : Windows SmartScreen peut afficher un avertissem
   - trouve où commence la batterie, même tard dans le morceau ;
   - aligne la structure mesure par mesure sur tout le morceau : insère des mesures vides là où l'enregistrement en a plus que la tablature, retire les mesures de la tablature que l'enregistrement ne joue pas ;
   - un tempo et une signature de temps par mesure (ou un tempo par temps en option) : la grille suit le batteur.
+- **Piste de batterie à partir d'un mix complet** : quand seul un mix complet est fourni, la batterie isolée est enregistrée dans `drums.opus` et la chanson garde tout le reste (le mix moins la batterie). Clone Hero peut ainsi couper la batterie sur une note ratée, sans la jouer deux fois. Le mix complet d'origine est gardé dans `gp2chc_original_audio/full_mix/`, et les conversions suivantes réutilisent directement `drums.opus` (sans nouvelle séparation).
 - **3 s de silence au début** du chart et des fichiers audio du morceau, pour ne pas être surpris par les premières notes. L'audio d'origine est gardé dans `gp2chc_original_audio/`, et une nouvelle conversion n'ajoute jamais le silence deux fois.
 - **Règles de jouabilité** : jamais plus de 2 pads en même temps (la grosse caisse s'y ajoute) ; le charley au pied (jaune cymbale par défaut) est retiré quand il tombe avec un tom, ou avec la caisse claire pendant un fill.
 - **song.ini** créé ou fusionné avec un existant (`song_length` et `preview_start_time` suivent le silence ajouté).

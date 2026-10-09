@@ -189,8 +189,9 @@ class App(tk.Tk):
         ttk.Label(
             files,
             text=tr(
-                "Facultatif : cale le début et le tempo sur l'enregistrement. Le mix complet passe d'abord par Demucs\n"
-                "(isole la batterie, quelques minutes). Il est ignoré si la batterie seule est fournie."
+                "Facultatif : cale le début et le tempo sur l'enregistrement. Le mix complet passe d'abord par Demucs (quelques\n"
+                "minutes) : la batterie isolée est enregistrée dans drums.opus et la chanson garde le reste. "
+                "Ignoré si la batterie seule est fournie."
             ),
             foreground="gray", justify="left",
         ).grid(row=4, column=1, columnspan=3, sticky="w")  # fmt: skip

@@ -17,6 +17,8 @@ from . import deps
 from .i18n import tr
 
 BACKUP_DIR = "gp2chc_original_audio"
+FULL_MIX_DIR = "full_mix"  # dans BACKUP_DIR : mix complet d'origine quand la batterie en a été isolée
+DRUMS_NAME = "drums.opus"
 STATE_FILE = "gp2chc_padding.json"
 # Noms de pistes audio lus par Clone Hero
 STEMS = {
@@ -37,6 +39,43 @@ def original(path: str | Path) -> Path:
     path = Path(path)
     backup = path.parent / BACKUP_DIR / path.name
     return backup if backup.exists() else path
+
+
+def original_mix(path: str | Path) -> Path:
+    """Mix complet d'origine : il peut avoir été rangé dans BACKUP_DIR/full_mix quand sa batterie a été isolée."""
+    path = Path(path)
+    full = path.parent / BACKUP_DIR / FULL_MIX_DIR / path.name
+    return full if full.exists() else original(path)
+
+
+def install_separated(folder: Path, mix: str | Path, drums_audio: Path, rest_audio: Path) -> str:
+    """Batterie isolée d'un mix -> drums.opus ; le morceau sans la batterie devient la piste « chanson ».
+
+    Les deux sont rangés sans silence dans BACKUP_DIR, comme les originaux des autres pistes : add_lead_in les
+    décale ensuite, et les conversions suivantes les utilisent comme des pistes séparées (sans refaire Demucs).
+    Le mix complet d'origine, s'il était dans le dossier, est gardé dans BACKUP_DIR/full_mix.
+    Renvoie le nom de la piste chanson.
+    """
+    folder, mix = Path(folder), Path(mix)
+    backup = folder / BACKUP_DIR
+    full = backup / FULL_MIX_DIR
+    full.mkdir(parents=True, exist_ok=True)
+    inside = mix.resolve().parent in {folder.resolve(), backup.resolve(), full.resolve()}
+    song = mix.name if inside else _target_name(mix, "song", set(), 0, 1)
+
+    # mettre de côté, intacts, le mix complet et une éventuelle piste de batterie qui n'est pas la nôtre
+    for name in (song, DRUMS_NAME):
+        if (full / name).exists() or (name == DRUMS_NAME and (backup / name).exists()):
+            continue
+        current = original(folder / name)
+        if current.exists() and (name != song or inside):
+            shutil.move(str(current), str(full / name))
+
+    for source, name in ((drums_audio, DRUMS_NAME), (rest_audio, song)):
+        target = backup / name
+        if not target.exists() or target.stat().st_mtime_ns < source.stat().st_mtime_ns:
+            _encode(source, target, 0)
+    return song
 
 
 def _is_song_audio(path: Path) -> bool:
@@ -80,8 +119,8 @@ def _encode(source: Path, target: Path, lead_in_ms: float) -> None:
     if lead_in_ms <= 0 and source.suffix.lower() == target.suffix.lower():
         shutil.copy2(source, tmp)
     else:
-        delay = int(round(lead_in_ms))
-        cmd = [deps.ffmpeg() or "ffmpeg", "-v", "error", "-y", "-i", str(source), "-af", f"adelay={delay}:all=1", "-map_metadata", "0"]
+        delay = ["-af", f"adelay={int(round(lead_in_ms))}:all=1"] if lead_in_ms > 0 else []
+        cmd = [deps.ffmpeg() or "ffmpeg", "-v", "error", "-y", "-i", str(source), *delay, "-map_metadata", "0"]
         cmd += CODECS[target.suffix.lower()] + [str(tmp)]
         run = subprocess.run(cmd, capture_output=True, creationflags=deps.NO_WINDOW)
         if run.returncode != 0:

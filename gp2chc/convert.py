@@ -91,7 +91,7 @@ def convert(input_path: str | Path, output: str | Path | None = None, options: O
         cal = align.calibrate(
             chart_mod.build_chart(score, mapping, options.max_hands),
             [str(audio.original(p)) for p in options.audio],
-            [str(audio.original(p)) for p in options.mix],
+            [str(audio.original_mix(p)) for p in options.mix],
             options.progress,
             drums_start,
             options.tempo_per_beat,
@@ -168,10 +168,42 @@ def convert(input_path: str | Path, output: str | Path | None = None, options: O
 
     midi.write_midi(out / "notes.mid", chart_mod.to_midi_tracks(chart, title, options.dynamics), PPQ)
 
+    # Mix complet sans pistes de batterie : la batterie isolée devient drums.opus et la chanson perd sa batterie
+    # (sinon Clone Hero jouerait la batterie deux fois, et une note ratée ne la couperait pas)
+    separated_song = None
+    if options.mix and not options.audio:
+        from . import separate
+
+        mix = options.mix[0]
+        drums_audio, rest_audio = separate.stems(str(audio.original_mix(mix)), options.progress)
+        separated_song = audio.install_separated(out, mix, drums_audio, rest_audio)
+        inside = Path(mix).resolve().parent in {out.resolve(), (out / audio.BACKUP_DIR).resolve(),
+                                                (out / audio.BACKUP_DIR / audio.FULL_MIX_DIR).resolve()}  # fmt: skip
+        if inside:
+            messages.append(
+                tr(
+                    "Batterie isolée enregistrée dans {drums} ; {song} contient maintenant le morceau sans la batterie "
+                    "(mix complet d'origine gardé dans {folder})",
+                    drums=audio.DRUMS_NAME,
+                    song=separated_song,
+                    folder=f"{audio.BACKUP_DIR}/{audio.FULL_MIX_DIR}",
+                )
+            )
+        else:
+            messages.append(
+                tr(
+                    "Batterie isolée enregistrée dans {drums} ; {song} contient le morceau sans la batterie "
+                    "(votre mix complet n'est pas modifié)",
+                    drums=audio.DRUMS_NAME,
+                    song=separated_song,
+                )
+            )
+
     # Silence au début : les fichiers audio du morceau sont décalés d'autant que le chart
     files = []
     if lead > 0 or (out / audio.BACKUP_DIR).is_dir():
-        files = audio.add_lead_in(out, options.audio, options.mix, lead, options.progress)
+        mixes = [] if separated_song else options.mix
+        files = audio.add_lead_in(out, options.audio, mixes, lead, options.progress)
     if files:
         if song_length is None:
             lengths = [audio.duration_ms(audio.original(f)) for f in files]

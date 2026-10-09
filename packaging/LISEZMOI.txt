@@ -11,7 +11,8 @@ avec son modèle) sont inclus, et aucune connexion internet n'est nécessaire.
 2. Facultatif mais conseillé : « Dossier du morceau... » pour choisir le dossier Clone Hero du morceau
    (les pistes drums_*.ogg/opus et le song.ini y sont détectés), ou choisissez l'audio vous-même :
    « Batterie seule » (pistes de batterie) ou « Mix complet » (la batterie en est isolée automatiquement).
-   Le début et le tempo du chart sont alors calés sur l'enregistrement.
+   Le début et le tempo du chart sont alors calés sur l'enregistrement. Avec un mix complet, la batterie
+   isolée est enregistrée dans drums.opus et la chanson garde le reste (mix d'origine conservé).
 3. Cliquez sur Convertir : notes.mid et song.ini sont écrits dans le dossier de sortie.
 
 Par défaut, 3 s de silence sont ajoutées au début du chart et des fichiers audio du dossier ; les
@@ -30,7 +31,8 @@ are included, and no internet connection is needed.
 2. Optional but recommended: "Song folder..." to pick the song's Clone Hero folder (drums_*.ogg/opus
    tracks and song.ini are detected), or choose the audio yourself: "Drums only" (drum tracks) or
    "Full mix" (the drums are isolated automatically). The chart's start and tempo are then aligned to
-   the recording.
+   the recording. With a full mix, the isolated drums are saved to drums.opus and the song keeps the
+   rest (original mix kept).
 3. Click Convert: notes.mid and song.ini are written to the output folder.
 
 By default, 3 s of silence are added at the start of the chart and of the folder's audio files; the

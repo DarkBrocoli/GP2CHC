@@ -21,6 +21,7 @@ The executable is not signed, so Windows SmartScreen may warn on first launch: "
   - finds where the drums start, even late in the song;
   - aligns the structure bar by bar over the whole song, inserting empty bars where the recording has more than the tab and removing tab bars the recording does not play;
   - one tempo and one time signature per bar (or one tempo per beat as an option), so the grid follows the drummer.
+- **Drum stem from a full mix**: when only a full mix is given, the isolated drums are saved as `drums.opus` and the song file keeps everything else (mix minus drums), so Clone Hero can mute the drums on missed notes without playing them twice. The original full mix is kept in `gp2chc_original_audio/full_mix/`, and later conversions reuse `drums.opus` directly (no new separation).
 - **3 s of silence at the start** of the chart and of the song's audio files, so the first notes don't catch you off guard. The original audio is kept in `gp2chc_original_audio/`, and running again never adds the silence twice.
 - **Playability rules**: never more than 2 pads at once (the kick comes on top); the pedal hi-hat (yellow cymbal by default) is dropped when it falls with a tom, or with the snare during a fill.
 - **song.ini** generated or merged with an existing one (`song_length` and `preview_start_time` follow the added silence).
